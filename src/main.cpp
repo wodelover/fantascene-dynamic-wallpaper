@@ -1,9 +1,29 @@
+/*
+ * Copyright (C) 2020 ~ 2022 LiuMingHang.
+ *
+ * Author:     LiuMingHang <liuminghang0821@gmail.com>
+ *
+ * Maintainer: LiuMingHang <liuminghang0821@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include <malloc.h>
 
+#include "loadTranslation.h"
 #include "application.h"
 #include "wallpaper.h"
 #include "dbuswallpaperservice.h"
-
 #include "settingwindow.h"
 
 #include <QObject>
@@ -16,118 +36,39 @@
 #include <QFile>
 #include <QStandardPaths>
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
+/* Translation file path */
+#define TRANSALTION_PATH "/usr/share/fantascene-dynamic-wallpaper/translations"
 
-#define TRANSALTIONPATH "/usr/share/fantascene-dynamic-wallpaper/translations"
+/* instance lock path */
+#define INSTANCE_LOCK_PATH ".cache/fantascene"
 
-bool checkOnly()
-{
-    //single
-    QString userName = QDir::homePath().section("/", -1, -1);
-    std::string path = (QDir::homePath() + "/.cache/deepin/fantascene/").toStdString();
-    QDir tdir(path.c_str());
-    if (!tdir.exists()) {
-        bool ret =  tdir.mkpath(path.c_str());
-        qDebug() << ret ;
-    }
+/* instance lock name */
+#define INSTANCE_LOCK "single"
 
-    path += "single";
-    int fd = open(path.c_str(), O_WRONLY | O_CREAT, 0644);
-    int flock = lockf(fd, F_TLOCK, 0);
-
-    if (fd == -1) {
-        perror("open lockfile/n");
-        return false;
-    }
-    if (flock == -1) {
-        perror("lock file error/n");
-        return false;
-    }
-    return true;
-}
-
-void cpToTmp()
-{
-    QString path = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/.config/deepin-dreamscene/";
-    QDir dir(path);
-    if (!dir.exists()) {
-        QDir dir1;
-        dir1.mkpath(path);
-    }
-}
 int main(int argc, char *argv[])
 {
-    cpToTmp();
-//    QString path = "/opt/durapps/fantascene-dynamic-wallpaper/";
-
     mallopt(M_ARENA_MAX, 1);
 
     Application a(argc, argv);
+
     a.setApplicationVersion("1.0.0");
+
 #ifdef Q_OS_LINUX
-    QDir dir(TRANSALTIONPATH);
-    if (dir.exists()) {
-        QDirIterator qmIt(TRANSALTIONPATH, QStringList() << QString("*%1.qm").arg(QLocale::system().name()), QDir::Files);
-        while (qmIt.hasNext()) {
-            qmIt.next();
-            QFileInfo finfo = qmIt.fileInfo();
-            QTranslator *translator = new QTranslator;
-            if (translator->load(finfo.baseName(), finfo.absolutePath())) {
-                qApp->installTranslator(translator);
-            }
-        }
-    }
+    load_translation_files(TRANSALTION_PATH);
 #endif
+
     setlocale(LC_NUMERIC, "C");
 
-    if (checkOnly()) {
-        bool isShowMainWindow = true;
+    /*
+     * Check if there are multiple instances
+     * If there are multiple instances, exit now.
+    */
+    const QString lock = QDir::homePath() + "/" + INSTANCE_LOCK_PATH + INSTANCE_LOCK;
+    QLockFile lockFile(lock);
 
-        QMainWindow *mainwindw = new QMainWindow();
-        settingWindow *window = new settingWindow(mainwindw, mainwindw);
-        mainwindw->setCentralWidget(window);
-        int index = 0;
-        for (const QString &arg : qApp->arguments()) {
-            if (arg == "min") {
-                index++;
-            }
-        }
-        if (index == 0 && isShowMainWindow) {
-//            mainwindw->show();
-        }
-        mainwindw->setFixedSize(QSize(640, 500));
-        mainwindw->setWindowTitle("动态壁纸");
-        mainwindw->setWindowIcon(QIcon(":/install/wallpaper.png"));
-
-        mainwindw->move(qApp->desktop()->screen()->rect().center() - mainwindw->rect().center());
-
-        Wallpaper *w = new Wallpaper(window->getCurrentPath(), window->getCurrentNumber());
-        dApp->setDesktopTransparent();
-
-        DBusWallpaperService *dbusInter = new DBusWallpaperService(w);
-        Q_UNUSED(dbusInter);
-
-        QDBusConnection::sessionBus().registerService("com.deepin.dde.fantascene");
-        QDBusConnection::sessionBus().registerObject("/com/deepin/dde/fantascene", "com.deepin.dde.fantascene", w);
-
-        QString envName("DDE_SESSION_PROCESS_COOKIE_ID");
-
-        QByteArray cookie = qgetenv(envName.toUtf8().data());
-        qunsetenv(envName.toUtf8().data());
-
-        if (!cookie.isEmpty()) {
-            QDBusInterface iface("com.deepin.SessionManager",
-                                 "/com/deepin/SessionManager",
-                                 "com.deepin.SessionManager",
-                                 QDBusConnection::sessionBus());
-            iface.asyncCall("Register", QString(cookie));
-        }
-
-
-    } else {
+    if (!lockFile.tryLock(300))
+    {
+        qDebug() << "The application is already running!";
         QDBusInterface iface("com.deepin.dde.fantascene",
                              "/com/deepin/dde/fantascene",
                              "com.deepin.dde.fantascene",
@@ -135,6 +76,26 @@ int main(int argc, char *argv[])
         iface.asyncCall("activeWindow");
         return 0;
     }
+
+    QMainWindow *mainwindw = new QMainWindow();
+    settingWindow *window = new settingWindow(mainwindw, mainwindw);
+    mainwindw->setCentralWidget(window);
+    mainwindw->setFixedSize(QSize(640, 500));
+    mainwindw->setWindowTitle(QObject::tr("dynamic-wallpaper"));
+    mainwindw->setWindowIcon(QIcon(":/install/wallpaper.png"));
+    mainwindw->move(qApp->desktop()->screen()->rect().center() - mainwindw->rect().center());
+
+    QString envName("DDE_SESSION_PROCESS_COOKIE_ID");
+    QByteArray cookie = qgetenv(envName.toUtf8().data());
+    qunsetenv(envName.toUtf8().data());
+    if (cookie.isEmpty()) {
+        QDBusInterface iface("com.deepin.SessionManager",
+                             "/com/deepin/SessionManager",
+                             "com.deepin.SessionManager",
+                             QDBusConnection::sessionBus());
+        iface.asyncCall("Register", QString(cookie));
+    }
+
 
     return a.exec();
 }

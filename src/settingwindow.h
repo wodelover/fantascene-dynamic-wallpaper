@@ -1,3 +1,23 @@
+/*
+ * Copyright (C) 2020 ~ 2022 LiuMingHang.
+ *
+ * Author:     LiuMingHang <liuminghang0821@gmail.com>
+ *
+ * Maintainer: LiuMingHang <liuminghang0821@gmail.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #ifndef SETTINGWINDOW_H
 #define SETTINGWINDOW_H
 
@@ -6,10 +26,14 @@
 #include <QMainWindow>
 #include <QFileDialog>
 #include <QWindow>
+#include <QTimer>
 
 #include <QtX11Extras/QX11Info>
 #include <qnamespace.h>
 #include <xcb/xcb_ewmh.h>
+#include "wallpaper.h"
+
+#include "dbuswallpaperservice.h"
 class QSystemTrayIcon;
 class QMenu;
 class historyWidget;
@@ -30,6 +54,8 @@ public:
     ~settingWindow();
 
     void readSettings();
+
+    void executeSettings();
 
     QString getCurrentPath();
 
@@ -55,6 +81,8 @@ public:
     void initAtom();
     //获得窗口属性,桌面，普通窗口等
     uint32_t searchWindowType(int wid);
+
+    void initWallpaperWidget();
 protected:
     bool eventFilter(QObject *obj, QEvent *event);
 private Q_SLOTS:
@@ -119,6 +147,10 @@ private Q_SLOTS:
     void on_pluginBtn_clicked();
     void on_tansparency_slider_valueChanged(int value);
 
+    void slotShowDesktopIcon(bool isIcon);
+
+    void slotTimerSaveSettings();
+
 public Q_SLOTS:
     void activeWindow();
 private:
@@ -151,6 +183,9 @@ private:
     xcb_ewmh_connection_t m_ewmh_connection;
 
     QMutex m_mutex;
+
+    Wallpaper *m_wallpaper{nullptr};
+    QTimer *m_timerSave{nullptr};
 };
 
 #endif // SETTINGWINDOW_H
